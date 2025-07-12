@@ -1,8 +1,8 @@
 {
   "gta_version": "1.0.231.0",
-  "message": "Test",
-  "show_message": true,
-  "discord_invite": "Test",
-  "show_discord_invite": true
+  "message": "",
+  "show_message": false,
+  "discord_invite": "",
+  "show_discord_invite": false
 }
 
