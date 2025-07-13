@@ -5,6 +5,8 @@ import pathlib
 import sys
 import getpass
 import time
+import threading
+import platform
 
 ProgramGtaVersion = "1.0.231.0"
 
@@ -40,6 +42,12 @@ if os.path.exists(config_path):
 else:
     config = {}
 
+if os.path.exists(config_path):
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+else:
+    config = {}
+
 if not config.get("gtapath"):
     config["gtapath"] = input("Please enter your GTA 5 installation path: ")
     with open(config_path, 'w') as f:
@@ -59,7 +67,7 @@ if not os.path.exists(version_file):
     sys.exit(1)
 
 with open(version_file, "r") as vf:
-        gta_version = vf.read().strip()
+    gta_version = vf.read().strip()
 
 if gta_version == ProgramGtaVersion:
     print("[SUCCESS] GTA 5 version matches the expected version:", ProgramGtaVersion)
@@ -70,8 +78,48 @@ else:
     else:
         print("[INFO] Your GTA 5 version is older and not supported by this script.")
 
-# List of files to check and their expected sizes in KB
+if not config.get("display_mode"):
+    print("Choose display mode for file checking:")
+    print("1. Progress bar")
+    print("2. Full displayed list")
+    choice = input("Enter 1 or 2: ").strip()
+    if choice == "1":
+        config["display_mode"] = "progress"
+    else:
+        config["display_mode"] = "list"
+    with open(config_path, 'w') as f:
+        json.dump(config, f)
+
+display_mode = config["display_mode"]
+settings = config 
+
+if not settings.get("display_mode"):
+    print("Choose display mode for file checking:")
+    print("1. Progress bar")
+    print("2. Full displayed list")
+    choice = input("Enter 1 or 2: ").strip()
+    if choice == "1":
+        settings["display_mode"] = "progress"
+    if choice == "2":
+        settings["display_mode"] = "list"
+    else:
+        print("Invalid choice, defaulting to progress bar.")
+        settings["display_mode"] = "progress"    
+    with open(config_path, 'w') as sf:
+        json.dump(settings, sf)
+
+display_mode = settings["display_mode"]
+
+def print_progress_bar(iteration, total, prefix='', suffix='', length=50):
+    percent = f"{100 * (iteration / float(total)):.1f}"
+    filled_length = int(length * iteration // total)
+    bar = '█' * filled_length + '-' * (length - filled_length)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end='\r')
+    if iteration == total:
+        print()
+
 files_to_check = [
+    {"filename": "common.rpf", "expected_size_kb": 27056},
     {"filename": "x64a.rpf", "expected_size_kb": 47566},
     {"filename": "x64b.rpf", "expected_size_kb": 145946}, 
     {"filename": "x64c.rpf", "expected_size_kb": 2144734},
@@ -96,23 +144,6 @@ files_to_check = [
     {"filename": "x64v.rpf", "expected_size_kb": 1896530},
     {"filename": "x64w.rpf", "expected_size_kb": 915372},
 ]
-
-faulty_files = []
-
-for file_info in files_to_check:
-    file_path = os.path.join(gtapath, file_info["filename"])
-    expected_size_kb = file_info["expected_size_kb"]
-    if os.path.exists(file_path):
-        actual_size_kb = os.path.getsize(file_path) // 1024
-        if actual_size_kb == expected_size_kb:
-            print(f"[SUCCESS] {file_info['filename']} size is correct: {actual_size_kb} KB")
-        else:
-            print(f"[WARNING] {file_info['filename']} size mismatch! Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB")
-            faulty_files.append(f"{file_info['filename']} (Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB)")
-    else:
-        print(f"[ERROR] {file_info['filename']} not found in the GTA 5 directory.")
-        faulty_files.append(f"{file_info['filename']} (Not found)")
-    time.sleep(0.02)
 
 update_files_to_check = [
     {"filename": "update.rpf", "expected_size_kb": 1418782},
@@ -210,23 +241,48 @@ update_files_to_check = [
     {"filename": os.path.join("x64", "dlcpacks", "patchdayg9ecng", "dlc.rpf"), "expected_size_kb": 16022},
     {"filename": os.path.join("x64", "dlcpacks", "vinewood", "dlc.rpf"), "expected_size_kb": 1654804},
 ]
-# Check files in the 'update' folder
-for file_info in update_files_to_check:
-    file_path = os.path.join(gtapath, "update", file_info["filename"])
-    expected_size_kb = file_info["expected_size_kb"]
+
+faulty_files = []
+
+def check_file(file_path, expected_size_kb, display_name):
     if os.path.exists(file_path):
         actual_size_kb = os.path.getsize(file_path) // 1024
         if actual_size_kb == expected_size_kb:
-            print(f"[SUCCESS] update/{file_info['filename']} size is correct: {actual_size_kb} KB")
+            if display_mode == "list":
+                print(f"[SUCCESS] {display_name} size is correct: {actual_size_kb} KB")
         else:
-            print(f"[WARNING] update/{file_info['filename']} size mismatch! Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB")
-            faulty_files.append(f"update/{file_info['filename']} (Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB)")
+            print(f"[WARNING] {display_name} size mismatch! Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB")
+            faulty_files.append(f"{display_name} (Found: {actual_size_kb} KB, Expected: {expected_size_kb} KB)")
     else:
-        print(f"[ERROR] update/{file_info['filename']} not found in the GTA 5 directory.")
-        faulty_files.append(f"update/{file_info['filename']} (Not found)")
+        print(f"[ERROR] {display_name} not found in the GTA 5 directory.")
+        faulty_files.append(f"{display_name} (Not found)")
+
+total_files = len(files_to_check) + len(update_files_to_check)
+current_file = 0
+
+if display_mode == "progress":
+    print_progress_bar(0, total_files, prefix='Checking files:', suffix='Complete', length=40)
+
+for file_info in files_to_check:
+    file_path = os.path.join(gtapath, file_info["filename"])
+    expected_size_kb = file_info["expected_size_kb"]
+    display_name = file_info["filename"]
+    check_file(file_path, expected_size_kb, display_name)
+    current_file += 1
+    if display_mode == "progress":
+        print_progress_bar(current_file, total_files, prefix='Checking files:', suffix='Complete', length=40)
     time.sleep(0.02)
 
-# Display all faulty files at the end
+for file_info in update_files_to_check:
+    file_path = os.path.join(gtapath, "update", file_info["filename"])
+    expected_size_kb = file_info["expected_size_kb"]
+    display_name = f"update/{file_info['filename']}"
+    check_file(file_path, expected_size_kb, display_name)
+    current_file += 1
+    if display_mode == "progress":
+        print_progress_bar(current_file, total_files, prefix='Checking files:', suffix='Complete', length=40)
+    time.sleep(0.02)
+
 if faulty_files:
     print("\n========== Faulty Files ==========")
     for f in faulty_files:
@@ -235,6 +291,45 @@ if faulty_files:
 else:
     print("\nAll checked files are correct!")
 
+
+statistics_path = os.path.join(config_dir, 'statistics.json')
+if os.path.exists(statistics_path):
+    with open(statistics_path, 'r') as sf:
+        statistics = json.load(sf)
+else:
+    statistics = {
+        "uses": 0,
+        "last_used": "",
+        "faulty_files_count": 0,
+        "last_gta_version": "",
+        "total_faulty_files": 0,
+        "system_info": ""
+    }
+statistics["uses"] += 1
+statistics["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+statistics["last_gta_version"] = ProgramGtaVersion
+statistics["system_info"] = platform.platform()
+
+def save_statistics():
+    statistics["faulty_files_count"] = len(faulty_files)
+    statistics["total_faulty_files"] += len(faulty_files)
+    with open(statistics_path, 'w') as sf:
+        json.dump(statistics, sf, indent=2)
+save_statistics()
+affiliation_file_path = os.path.join(config_dir, 'readme.txt')
+if not os.path.exists(affiliation_file_path):
+    affiliation_text = (
+        "All files created by this tool in this directory can be safely deleted at any time.\n"
+        ""
+        "This project is not affiliated with, endorsed by, or in any way officially connected to Rockstar Games, its subsidiaries, or affiliates.\n"
+        "All trademarks, logos, and brand names are the property of their respective owners.\n"
+        "This project is an independent, unofficial work and is not sponsored, approved, or authorized by Rockstar Games.\n"
+        "made by @IDname\n" \
+        "Updates and support: https://github.com/IDname-git/GTAVFilechecker \n"
+        
+    )
+    with open(affiliation_file_path, 'w') as af:
+        af.write(affiliation_text)
 print("This project is not affiliated with, endorsed by, or in any way officially connected to Rockstar Games, its")
 print("subsidiaries, or affiliates. All trademarks, logos, and brand names are the property of their respective owners.")
 print("This project is an independent, unofficial work and is not sponsored, approved, or authorized by Rockstar Games.")
