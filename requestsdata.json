@@ -1,7 +1,7 @@
 {
   "gta_version": "1.0.231.0",
-  "message": "common.rpf will be added soon!",
-  "show_message": true,
+  "message": "",
+  "show_message": false,
   "discord_invite": "",
   "show_discord_invite": false
 }
